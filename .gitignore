@@ -1,0 +1,123 @@
+# .gitignore for Programming Helper Agent
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables and secrets
+.env
+.env.local
+.env.production
+config/.env
+*.key
+*.pem
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Generated files and caches
+*.log
+*.tmp
+*.temp
+.cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Embeddings and vector store files
+embeddings/
+*.pkl
+*.bin
+*.index
+faiss_index.*
+embeddings.pkl
+metadata.json
+
+# Data files (optional - you may want to track some sample data)
+data/
+# Uncomment the line above if you want to ignore all data files
+# Or be more specific:
+# data/*.pdf
+# data/*.docx
+# data/private/
+
+# Model files and weights (can be large)
+models/
+*.model
+*.bin
+*.safetensors
+pytorch_model.bin
+
+# Jupyter notebooks (optional)
+.ipynb_checkpoints/
+*.ipynb
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.bak
+*.swp
+*.tmp
+temp/
+tmp/
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+
+# Logs and databases
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# Configuration backups
+config_backup/
+*.conf.bak
+
+# Export files (conversation histories, etc.)
+exports/
+conversation_export_*.json
+*.export.json
