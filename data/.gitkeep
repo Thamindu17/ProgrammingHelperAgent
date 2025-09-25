@@ -1,0 +1,9 @@
+# Data Directory
+# This folder stores documentation files for the RAG system
+# Supported formats: PDF, Markdown (.md), Text (.txt), Python (.py)
+# 
+# Sample files you can add:
+# - programming_guides.pdf
+# - python_documentation.md
+# - coding_best_practices.txt
+# - example_code_snippets.py

@@ -1,0 +1,8 @@
+# Embeddings Directory
+# This folder stores the FAISS index and embedding vectors
+# Generated files:
+# - faiss_index.bin: FAISS vector database index
+# - embeddings.pkl: Pickled embedding vectors
+# - metadata.json: Metadata about indexed documents
+# 
+# Note: These files are automatically generated when you first run the agent
