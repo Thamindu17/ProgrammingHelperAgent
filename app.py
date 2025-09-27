@@ -1,18 +1,3 @@
-#!/usr/bin/env python3
-"""
-Programming Helper Agent - Main Application
-A RAG-based AI assistant for programming help and documentation search
-
-This is the main entry point for the Programming Helper Agent.
-Run this file to start an interactive session with the agent.
-
-Usage:
-    python app.py                    # Interactive mode
-    python app.py --initialize       # Initialize knowledge base
-    python app.py --query "question" # Single query mode
-    python app.py --stats            # Show agent statistics
-    python app.py --help             # Show help
-"""
 
 import os
 import sys
