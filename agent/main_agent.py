@@ -8,6 +8,7 @@ from config.settings import GROQ_API_KEY, EMBEDDING_MODEL, LLM_MODEL
 
 DB_FAISS_PATH = "embeddings/"
 
+
 def create_qa_chain():
     embeddings = HuggingFaceEmbeddings(
         model_name=EMBEDDING_MODEL, 
