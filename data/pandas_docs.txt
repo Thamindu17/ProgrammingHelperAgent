@@ -1,0 +1,53 @@
+# Mini Pandas Documentation
+
+## Creating DataFrames
+
+You can create a Pandas DataFrame from a Python dictionary. The keys become column names and the values become the column data.
+
+import pandas as pd
+
+data1 = {'id': ['A01', 'A02', 'A03'],
+         'name': ['Alice', 'Bob', 'Charlie']}
+df1 = pd.DataFrame(data1)
+print(df1)
+
+
+## Viewing Data
+
+Use `.head()` to see the first few rows of a DataFrame or `.info()` to get a quick summary of its structure, including data types and non-null values.
+
+# Show the first 2 rows
+print(df1.head(2))
+
+# Get a summary of the DataFrame
+df1.info()
+
+
+## Selecting Data
+
+You can select a single column, which returns a Series, or multiple columns, which returns a DataFrame.
+
+# Select the 'name' column
+names = df1['name']
+
+# Use .loc to select rows by label (index) and columns by name.
+# Select the row with index 1
+row_bob = df1.loc[1]
+
+# Select the name of the person at index 2
+name_charlie = df1.loc[2, 'name']
+
+
+## Merging DataFrames
+
+To combine two DataFrames based on a common key column, use `pd.merge()`. This is similar to a SQL join.
+
+# Create a second DataFrame with related data
+data2 = {'id': ['A01', 'A02', 'A04'],
+         'score': [88, 92, 75]}
+df2 = pd.DataFrame(data2)
+
+# Merge df1 and df2 on the 'id' column
+merged_df = pd.merge(df1, df2, on='id', how='inner')
+print(merged_df)
+# The 'how' parameter can be 'inner', 'outer', 'left', or 'right'.

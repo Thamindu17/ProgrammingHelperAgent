@@ -1,0 +1,62 @@
+{
+  "taingolo": {
+    "source_info": {
+      "source": "https://www.sqlalchemy.org/",
+      "type": "website",
+      "method": "url",
+      "added_at": "2025-10-08T09:39:24.713506"
+    },
+    "document_count": 3,
+    "created_at": "2025-10-08T09:39:24.910334",
+    "path": "data/vector_stores\\taingolo",
+    "embedding_model": "all-MiniLM-L6-v2"
+  },
+  "fastapi": {
+    "source_info": {
+      "source": "https://fastapi.tiangolo.com/tutorial/first-steps/",
+      "type": "website",
+      "method": "url",
+      "added_at": "2025-10-08T09:44:30.604768"
+    },
+    "document_count": 12,
+    "created_at": "2025-10-08T09:44:30.631324",
+    "path": "data/vector_stores\\fastapi",
+    "embedding_model": "all-MiniLM-L6-v2"
+  },
+  "Samver": {
+    "source_info": {
+      "source": "https://semver.org/",
+      "type": "website",
+      "method": "url",
+      "added_at": "2025-10-08T10:05:05.946390"
+    },
+    "document_count": 21,
+    "created_at": "2025-10-08T10:05:07.427293",
+    "path": "data/vector_stores\\Samver",
+    "embedding_model": "all-MiniLM-L6-v2"
+  },
+  "Black 25.9.0": {
+    "source_info": {
+      "source": "https://black.readthedocs.io/en/stable/",
+      "type": "website",
+      "method": "url",
+      "added_at": "2025-10-08T10:07:04.715379"
+    },
+    "document_count": 7,
+    "created_at": "2025-10-08T10:07:05.253360",
+    "path": "data/vector_stores\\Black 25.9.0",
+    "embedding_model": "all-MiniLM-L6-v2"
+  },
+  "Black 25": {
+    "source_info": {
+      "source": "https://black.readthedocs.io/en/stable/",
+      "type": "website",
+      "method": "url",
+      "added_at": "2025-10-08T10:12:19.538419"
+    },
+    "document_count": 7,
+    "created_at": "2025-10-08T10:12:20.059912",
+    "path": "data/vector_stores\\Black 25",
+    "embedding_model": "all-MiniLM-L6-v2"
+  }
+}
