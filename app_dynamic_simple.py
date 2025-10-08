@@ -72,39 +72,55 @@ class ProgrammingHelperApp:
             print(f"Error adding documentation: {e}")
             return f"❌ Error: {str(e)}"
     
-    def chat_with_docs(self, message: str, history: list):
-        """Chat with documentation sources"""
+    def chat_with_docs(self, message: str, history: list, selected_sources: list, top_k: int, per_source_limit: int, min_overlap: int):
+        """Chat with documentation sources with source filtering and basic relevance filtering."""
         if not message.strip():
-            return history, ""
-        
+            return history, "", selected_sources
+
         try:
-            available_stores = list(self.vector_store.get_available_stores().keys())
-            
-            if not available_stores:
+            all_stores = list(self.vector_store.get_available_stores().keys())
+            if not all_stores:
                 response = "❌ No documentation available. Please add some documentation first!"
             else:
-                # Search documentation
-                relevant_docs = self.vector_store.search_multiple_stores(
-                    message, 
-                    store_names=available_stores, 
-                    k=4
+                if not selected_sources:
+                    # default to all
+                    selected_sources = all_stores
+                # Retrieve
+                raw_docs = self.vector_store.search_multiple_stores(
+                    message,
+                    store_names=selected_sources,
+                    k=top_k
                 )
-                
-                if relevant_docs:
-                    # Generate response
-                    response = self.qa_agent.generate_response(message, relevant_docs)
+                # Group & limit per source
+                grouped = {}
+                for d in raw_docs:
+                    src = d.metadata.get('vector_store','unknown')
+                    grouped.setdefault(src,[]).append(d)
+                limited_docs = []
+                for src, docs in grouped.items():
+                    limited_docs.extend(docs[:per_source_limit])
+
+                # Simple token overlap filter
+                query_terms = {t.lower() for t in message.split() if len(t) > 3}
+                filtered = []
+                for d in limited_docs:
+                    content_terms = set(w.lower() for w in d.page_content.split())
+                    overlap = len(query_terms & content_terms)
+                    if overlap >= min_overlap or d.metadata.get('fallback') == 'keyword':
+                        filtered.append(d)
+
+                final_docs = filtered if filtered else limited_docs
+                if final_docs:
+                    response = self.qa_agent.generate_response(message, final_docs)
                 else:
-                    response = "❌ No relevant information found in the documentation."
-            
-            # Add to history
+                    response = "❌ No relevant information after filtering. Adjust overlap threshold or sources."
+
             history.append([message, response])
-            
         except Exception as e:
             print(f"Error in chat: {e}")
             response = f"❌ Error: {str(e)}"
             history.append([message, response])
-        
-        return history, ""
+        return history, "", selected_sources
     
     def get_available_docs(self):
         """Get list of available documentation"""
@@ -156,6 +172,38 @@ class ProgrammingHelperApp:
         
         return info
 
+    # New helper wrappers for UI
+    def list_store_names(self):
+        return list(self.vector_store.get_available_stores().keys()) or ["(none)"]
+
+    def inspect_store(self, store_name: str):
+        if store_name == "(none)":
+            return "No stores available"
+        samples = self.vector_store.inspect_store_chunks(store_name, limit=3)
+        if not samples:
+            return f"No chunks found for '{store_name}'"
+        out = [f"🔍 First {len(samples)} chunk previews for {store_name}:"]
+        for i, s in enumerate(samples, 1):
+            meta = {k: v for k, v in s['metadata'].items() if k not in ('source',)}
+            out.append(f"\n[{i}] {s['preview'][:180]}...")
+            out.append(f"   Meta: {meta}")
+        return "\n".join(out)
+
+    def get_system_status(self):
+        try:
+            from config.settings import feature_summary
+            vec_stats = self.vector_store.get_statistics()
+            qa_status = self.qa_agent.get_status()
+            status_lines = [
+                "⚙️ System Status",
+                feature_summary(),
+                f"Vector Stores: {vec_stats['total_stores']} | Docs: {vec_stats['total_documents']}",
+                f"Mode: {qa_status['response_mode']} | Minimal: {qa_status['minimal_mode']}",
+            ]
+            return "\n".join(status_lines)
+        except Exception as e:
+            return f"Status error: {e}"
+
 def main():
     """Main function to run the application"""
     print("🚀 Starting Programming Helper Agent...")
@@ -170,11 +218,34 @@ def main():
         gr.Markdown("*Add your own documentation and get AI-powered answers!*")
         
         with gr.Tab("💬 Chat"):
-            chatbot = gr.Chatbot(height=400)
-            msg = gr.Textbox(placeholder="Ask about your documentation...")
-            clear = gr.Button("Clear")
-            
-            msg.submit(app.chat_with_docs, [msg, chatbot], [chatbot, msg])
+            # Explicit type to suppress deprecation warning (tuples retained for backward compat)
+            chatbot = gr.Chatbot(height=400, type="tuples")
+            with gr.Row():
+                msg = gr.Textbox(placeholder="Ask about your documentation...", scale=4)
+                send_btn = gr.Button("Ask", scale=1)
+            with gr.Accordion("Retrieval Options", open=False):
+                source_select = gr.CheckboxGroup(
+                    label="Select Sources (empty = all)",
+                    choices=app.vector_store.get_available_stores().keys()
+                )
+                top_k = gr.Slider(1, 10, value=4, step=1, label="Top K per Query")
+                per_source = gr.Slider(1, 5, value=2, step=1, label="Per-Source Limit")
+                min_overlap = gr.Slider(0, 10, value=1, step=1, label="Min Token Overlap")
+            clear = gr.Button("Clear Chat")
+
+            def _chat_wrapper(message, history, selected, k, per_src, overlap):
+                return app.chat_with_docs(message, history, selected, int(k), int(per_src), int(overlap))
+
+            send_btn.click(
+                _chat_wrapper,
+                inputs=[msg, chatbot, source_select, top_k, per_source, min_overlap],
+                outputs=[chatbot, msg, source_select]
+            )
+            msg.submit(
+                _chat_wrapper,
+                inputs=[msg, chatbot, source_select, top_k, per_source, min_overlap],
+                outputs=[chatbot, msg, source_select]
+            )
             clear.click(lambda: [], outputs=chatbot)
         
         with gr.Tab("📤 Add Documentation"):
@@ -219,6 +290,25 @@ def main():
             )
             refresh_btn = gr.Button("🔄 Refresh")
             refresh_btn.click(app.get_available_docs, outputs=docs_display)
+
+            gr.Markdown("### Inspect Chunks")
+            store_dropdown = gr.Dropdown(
+                label="Select Store",
+                choices=app.list_store_names(),
+                value=app.list_store_names()[0]
+            )
+            inspect_btn = gr.Button("👓 Preview Chunks")
+            inspect_output = gr.Textbox(label="Chunk Preview", lines=8)
+            def refresh_choices():
+                return gr.Dropdown(choices=app.list_store_names(), value=app.list_store_names()[0])
+            # Update dropdown on refresh
+            refresh_btn.click(lambda: None, None, None, js="()=>{}")  # No-op to keep existing behavior
+            inspect_btn.click(app.inspect_store, inputs=store_dropdown, outputs=inspect_output)
+
+        with gr.Tab("🧪 Status"):
+            status_box = gr.Textbox(label="System Status", value=app.get_system_status(), lines=6)
+            status_refresh = gr.Button("🔄 Refresh Status")
+            status_refresh.click(app.get_system_status, outputs=status_box)
         
         with gr.Tab("🔧 Setup"):
             gr.Markdown("### Setup Instructions")
@@ -245,10 +335,33 @@ def main():
             
             check_btn.click(check_api_keys, outputs=setup_display)
     
-    # Launch
+    # Determine port: env GRADIO_SERVER_PORT > fallback to first free in list
+    import socket
+    def find_free_port(candidates=(7863, 7865, 7866, 8000, 9000)):
+        for p in candidates:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    s.bind(("127.0.0.1", p))
+                    return p
+                except OSError:
+                    continue
+        # Let OS choose
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+    import os as _os
+    env_port = _os.getenv("GRADIO_SERVER_PORT")
+    if env_port and env_port.isdigit():
+        port = int(env_port)
+    else:
+        port = find_free_port()
+    print(f"🌐 Launching on http://127.0.0.1:{port} (set GRADIO_SERVER_PORT to override)")
+
     interface.launch(
         server_name="127.0.0.1",
-        server_port=7863,
+        server_port=port,
         share=False
     )
 

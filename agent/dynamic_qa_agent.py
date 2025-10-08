@@ -76,6 +76,8 @@ Answer:
             return self._generate_fallback_response(question, relevant_docs)
         
         try:
+            # Determine retrieval mode (if any doc marked as fallback)
+            retrieval_mode = "keyword_fallback" if any(d.metadata.get('fallback') == 'keyword' for d in relevant_docs) else "vector"
             # Organize context by source
             context_by_source = {}
             sources_used = set()
@@ -104,8 +106,10 @@ Answer:
                 question=question,
                 sources=", ".join(sources_used)
             )
-            
-            return response
+            header = f"### Retrieval Mode: {retrieval_mode}\n\n"
+            if retrieval_mode == "keyword_fallback":
+                header += "_Vector similarity returned no hits; keyword fallback provided approximate matches._\n\n"
+            return header + response
             
         except Exception as e:
             print(f"❌ Error generating response: {e}")
@@ -151,18 +155,19 @@ Answer:
     
     def get_status(self) -> Dict:
         """Get status information about the QA agent"""
+        from config.settings import MINIMAL_MODE, ACTIVE_FEATURES
         status = {
             'initialized': self.initialized,
             'llm_available': self.llm is not None,
-            'response_mode': 'ai_powered' if self.initialized else 'documentation_search'
+            'response_mode': 'ai_powered' if self.initialized else 'documentation_search',
+            'minimal_mode': MINIMAL_MODE,
+            'active_features': ACTIVE_FEATURES
         }
-        
         if not self.initialized:
             status['setup_needed'] = [
                 "Add GROQ_API_KEY to .env file",
                 "Get free API key from: https://console.groq.com/"
             ]
-        
         return status
 
 # Test the QA agent

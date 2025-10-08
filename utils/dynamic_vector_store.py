@@ -6,6 +6,7 @@ import json
 from typing import List, Dict, Optional
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
+from typing import Any
 from langchain.schema import Document
 from datetime import datetime
 
@@ -33,17 +34,82 @@ class DynamicVectorStore:
         self.load_metadata()
     
     def _initialize_embeddings(self):
-        """Initialize embedding model (works offline)"""
-        try:
-            print("🔍 Initializing embedding model...")
-            self.embeddings = HuggingFaceEmbeddings(
-                model_name=self.embedding_model,
-                model_kwargs={'device': 'cpu'}
-            )
-            print("✅ Embedding model ready")
-        except Exception as e:
-            print(f"❌ Error initializing embeddings: {e}")
-            raise e
+        """Initialize embedding model with graceful fallbacks.
+
+        Priority:
+        1. If env USE_REMOTE_EMBEDDINGS=true and HF key present -> use remote inference (no heavy local deps)
+        2. Try local sentence-transformers model (may pull & load SciPy/sklearn stack)
+        3. Fallback to a lightweight hash embedding (non-semantic but functional) so the app still works.
+        """
+        use_remote = os.getenv("USE_REMOTE_EMBEDDINGS", "").lower() in ("1", "true", "yes")
+        force_light = os.getenv("LIGHT_EMBEDDINGS", "").lower() in ("1", "true", "yes")
+        hf_api_key = os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
+
+        class HashEmbedding:
+            """Lightweight fallback embedding producing deterministic pseudo-vectors.
+            Not semantically rich, but lets vector search function for demo/minimal mode.
+            """
+            def __init__(self, dim: int = 384):
+                self.dim = dim
+
+            def _hash(self, token: str) -> int:
+                h = 0
+                for c in token:
+                    h = (h * 131 + ord(c)) & 0xFFFFFFFF
+                return h
+
+            def embed_documents(self, texts):  # noqa: D401
+                return [self._embed(t) for t in texts]
+
+            def embed_query(self, text):
+                return self._embed(text)
+
+            def _embed(self, text: str):
+                import math
+                vec = [0.0] * self.dim
+                tokens = [t for t in text.lower().split() if t]
+                if not tokens:
+                    return vec
+                for t in tokens:
+                    idx = self._hash(t) % self.dim
+                    vec[idx] += 1.0
+                # L2 normalize
+                norm = math.sqrt(sum(v * v for v in vec)) or 1.0
+                return [v / norm for v in vec]
+
+        # 1. Remote embeddings via HuggingFace Inference
+        if not force_light and use_remote and hf_api_key:
+            try:
+                print("🔍 Initializing remote Hugging Face Inference embeddings...")
+                from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
+                model = os.getenv("REMOTE_EMBEDDING_MODEL", self.embedding_model)
+                self.embeddings = HuggingFaceInferenceAPIEmbeddings(
+                    api_key=hf_api_key,
+                    model_name=model,
+                )
+                print("✅ Remote inference embeddings ready")
+                return
+            except Exception as e:
+                print(f"⚠️ Remote embedding init failed: {e}. Falling back to local.")
+
+        # 2. Local model
+        if not force_light:
+            try:
+                print("🔍 Initializing local embedding model (sentence-transformers)...")
+                self.embeddings = HuggingFaceEmbeddings(
+                    model_name=self.embedding_model,
+                    model_kwargs={'device': 'cpu'}
+                )
+                print("✅ Local embedding model ready")
+                return
+            except KeyboardInterrupt:
+                print("⏭️ Local embedding initialization interrupted by user; switching to lightweight hash embedding.")
+            except Exception as e:
+                print(f"⚠️ Local embedding init failed: {e}. Using lightweight hash embedding.")
+
+        # 3. Lightweight hash fallback
+        print("🔧 Using lightweight hash-based embeddings (LOW QUALITY, for minimal mode). Set LIGHT_EMBEDDINGS=0 to attempt full model.")
+        self.embeddings = HashEmbedding()
     
     def load_metadata(self):
         """Load metadata about existing vector stores"""
@@ -182,7 +248,81 @@ class DynamicVectorStore:
                     print(f"❌ Error searching store '{store_name}': {e}")
         
         print(f"🎯 Total search results: {len(all_results)}")
+        if not all_results:
+            # Fallback: simple keyword scan across raw stored docs (best-effort)
+            print("🩹 Vector search empty – performing keyword fallback")
+            keyword_hits = self._keyword_fallback(query, store_names, k)
+            if keyword_hits:
+                print(f"🧪 Keyword fallback produced {len(keyword_hits)} matches")
+                return keyword_hits
+            else:
+                print("⚠️ Keyword fallback found nothing")
         return all_results
+
+    # ------------------------------------------------------------------
+    # Fallback & Debug Helpers
+    # ------------------------------------------------------------------
+    def _keyword_fallback(self, query: str, store_names: List[str], k: int) -> List[Document]:
+        terms = [t.lower() for t in query.split() if len(t) > 2]
+        if not terms:
+            return []
+        scored: List[tuple[float, Document]] = []
+        for store_name in store_names:
+            vs = self.load_vector_store(store_name)
+            if not vs:
+                continue
+            # Access underlying docs (FAISS stores in _documents / _docstore)
+            try:
+                # For safety handle different internal structures
+                docs_iter = []
+                if hasattr(vs, 'docstore') and hasattr(vs.docstore, 'search'):  # new style
+                    # We don't have an index of ids here; attempt exporting
+                    if hasattr(vs.docstore, 'dict'):
+                        docs_iter = list(vs.docstore.dict.values())
+                if not docs_iter and hasattr(vs, 'index_to_docstore_id'):
+                    ids = [vs.index_to_docstore_id[i] for i in vs.index_to_docstore_id]
+                    if hasattr(vs, 'docstore'):
+                        docs_iter = [vs.docstore.search(i) for i in ids]
+                for doc in docs_iter:
+                    if not doc or not getattr(doc, 'page_content', None):
+                        continue
+                    text_lower = doc.page_content.lower()
+                    score = sum(text_lower.count(term) for term in terms)
+                    if score > 0:
+                        # Clone doc with annotation
+                        new_meta = dict(doc.metadata)
+                        new_meta['fallback'] = 'keyword'
+                        new_meta['vector_store'] = store_name
+                        scored.append((score, Document(page_content=doc.page_content[:800], metadata=new_meta)))
+            except Exception as e:
+                print(f"⚠️ Keyword fallback error in '{store_name}': {e}")
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [d for _, d in scored[:k]]
+
+    def inspect_store_chunks(self, store_name: str, limit: int = 3) -> List[Dict]:
+        """Return sample chunk metadata + preview for debugging."""
+        vs = self.load_vector_store(store_name)
+        if not vs:
+            return []
+        samples = []
+        try:
+            docs_iter = []
+            if hasattr(vs, 'docstore') and hasattr(vs.docstore, 'dict'):
+                docs_iter = list(vs.docstore.dict.values())
+            if not docs_iter and hasattr(vs, 'index_to_docstore_id'):
+                ids = [vs.index_to_docstore_id[i] for i in vs.index_to_docstore_id]
+                if hasattr(vs, 'docstore'):
+                    docs_iter = [vs.docstore.search(i) for i in ids]
+            for doc in docs_iter[:limit]:
+                if not doc:
+                    continue
+                samples.append({
+                    'preview': doc.page_content[:200],
+                    'metadata': doc.metadata
+                })
+        except Exception as e:
+            print(f"⚠️ Inspect error: {e}")
+        return samples
     
     def get_store_info(self, store_name: str) -> Optional[Dict]:
         """Get detailed information about a specific store"""
